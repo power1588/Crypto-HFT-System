@@ -5,6 +5,7 @@ pub mod connectors;
 pub mod strategy;
 pub mod risk;
 pub mod oms;
+pub mod changes;
 
 pub use types::{Price, Size};
 pub use orderbook::{OrderBook, OrderBookLevel, OrderBookSnapshot, OrderBookDelta};
@@ -20,3 +21,11 @@ pub use strategy::{
 };
 pub use risk::{RiskEngine, RiskViolation, RiskRule, ShadowLedger, Inventory, Balance};
 pub use oms::{OrderManager, RateLimiter};
+pub use changes::{
+    binance::BinanceWebSocketAdapter,
+    mock::MockExchangeAdapter,
+    binance::HighPerformanceBinanceAdapter,
+    order_router::OrderRouter,
+    connection_manager::ConnectionManager,
+    error_handler::ErrorHandler,
+};
