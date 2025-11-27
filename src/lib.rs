@@ -14,6 +14,9 @@ pub use traits::{
     Balance, TradingFees, Trade
 };
 pub use connectors::{BinanceMessage, MockMarketDataStream, MockExecutionClient};
-pub use strategy::{StrategyEngine, Signal, Strategy, MarketState, SimpleArbitrageStrategy};
+pub use strategy::{
+    Strategy, MarketState, SimpleArbitrageStrategy, EventDrivenStrategy,
+    PortfolioRebalancer, MarketMakingStrategy,
+};
 pub use risk::{RiskEngine, RiskViolation, RiskRule, ShadowLedger, Inventory, Balance};
 pub use oms::{OrderManager, RateLimiter};
