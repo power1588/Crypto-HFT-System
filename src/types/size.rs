@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize, Serializer, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 use std::str::FromStr;
 
@@ -28,6 +28,11 @@ impl Size {
     /// Check if the size is zero
     pub fn is_zero(&self) -> bool {
         self.0.is_zero()
+    }
+
+    /// Create a zero Size
+    pub fn zero() -> Self {
+        Self(Decimal::ZERO)
     }
 }
 
@@ -111,6 +116,22 @@ impl std::ops::Mul<crate::types::Size> for crate::types::Price {
     }
 }
 
+// Implement Neg trait for Size (T026: needed for negative positions)
+impl std::ops::Neg for Size {
+    type Output = Self;
+
+    fn neg(self) -> Self {
+        Self(-self.0)
+    }
+}
+
+impl Size {
+    /// Get the absolute value of the size
+    pub fn abs(&self) -> Self {
+        Self(self.0.abs())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -132,11 +153,11 @@ mod tests {
     #[test]
     fn test_size_arithmetic() {
         let size1 = Size::new(Decimal::new(1000, 2)); // 10.00
-        let size2 = Size::new(Decimal::new(500, 2));  // 5.00
-        
+        let size2 = Size::new(Decimal::new(500, 2)); // 5.00
+
         let sum = size1 + size2;
         assert_eq!(sum.value(), Decimal::new(1500, 2)); // 15.00
-        
+
         let diff = size1 - size2;
         assert_eq!(diff.value(), Decimal::new(500, 2)); // 5.00
     }
@@ -145,7 +166,7 @@ mod tests {
     fn test_size_multiplication() {
         let size = Size::new(Decimal::new(1000, 2)); // 10.00
         let multiplier = Decimal::new(2, 0); // 2
-        
+
         let result = size * multiplier;
         assert_eq!(result.value(), Decimal::new(2000, 2)); // 20.00
     }
@@ -153,11 +174,11 @@ mod tests {
     #[test]
     fn test_price_size_multiplication() {
         let price = Price::new(Decimal::new(10000, 2)); // 100.00
-        let size = Size::new(Decimal::new(1500, 2));    // 15.00
-        
+        let size = Size::new(Decimal::new(1500, 2)); // 15.00
+
         let total_value = size * price;
         assert_eq!(total_value, Decimal::new(150000, 2)); // 1500.00
-        
+
         let total_value_alt = price * size;
         assert_eq!(total_value_alt, Decimal::new(150000, 2)); // 1500.00
     }
@@ -165,11 +186,11 @@ mod tests {
     #[test]
     fn test_size_serialization() {
         let size = Size::new(Decimal::new(1500, 2)); // 15.00
-        
+
         // Test JSON serialization
         let json = serde_json::to_string(&size).unwrap();
         assert_eq!(json, "\"15.00\"");
-        
+
         // Test JSON deserialization
         let deserialized: Size = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, size);
@@ -179,8 +200,28 @@ mod tests {
     fn test_size_is_zero() {
         let zero_size = Size::new(Decimal::ZERO);
         assert!(zero_size.is_zero());
-        
+
         let non_zero_size = Size::new(Decimal::new(100, 2)); // 1.00
         assert!(!non_zero_size.is_zero());
+    }
+
+    #[test]
+    fn test_size_negation() {
+        let size = Size::new(Decimal::new(100, 2)); // 1.00
+        let negated = -size;
+        assert_eq!(negated.value(), Decimal::new(-100, 2)); // -1.00
+
+        // Double negation should return original
+        let double_negated = -(-size);
+        assert_eq!(double_negated.value(), Decimal::new(100, 2));
+    }
+
+    #[test]
+    fn test_size_abs() {
+        let positive = Size::new(Decimal::new(100, 2)); // 1.00
+        let negative = Size::new(Decimal::new(-100, 2)); // -1.00
+
+        assert_eq!(positive.abs().value(), Decimal::new(100, 2));
+        assert_eq!(negative.abs().value(), Decimal::new(100, 2));
     }
 }

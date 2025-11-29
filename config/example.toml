@@ -1,0 +1,93 @@
+# High-Frequency Market Making System Configuration
+
+[system]
+log_level = "info"
+log_file = "logs/crypto_hft.log"
+max_log_file_size = 10485760  # 10MB
+max_log_files = 5
+
+# Exchange configurations
+[exchanges.binance]
+exchange_id = "binance"
+api_key = "your-api-key"
+api_secret = "your-api-secret"
+sandbox = true
+rate_limits = { requests_per_second = 10, requests_per_minute = 1200 }
+
+[exchanges.okx]
+exchange_id = "okx"
+api_key = "your-api-key"
+api_secret = "your-api-secret"
+sandbox = true
+rate_limits = { requests_per_second = 20, requests_per_minute = 2400 }
+
+# Strategy configurations
+[strategies.market_making]
+strategy_type = "market_making"
+symbols = ["BTCUSDT", "ETHUSDT"]
+exchanges = ["binance"]
+
+[strategies.market_making.parameters]
+spread_bps = 10
+order_size = "0.01"
+target_inventory_ratio = "0.5"
+max_position = "1.0"
+min_spread_bps = 5
+max_spread_bps = 50
+inventory_tolerance = "0.2"
+order_refresh_seconds = 5
+price_levels = 5
+
+[strategies.arbitrage]
+strategy_type = "arbitrage"
+symbols = ["BTCUSDT"]
+exchanges = ["binance", "okx"]
+
+[strategies.arbitrage.parameters]
+min_profit_bps = 5
+order_size = "0.01"
+max_position = "1.0"
+execution_timeout_ms = 1000
+price_update_threshold = "0.001"
+max_latency_ms = 100
+
+[strategies.prediction]
+strategy_type = "prediction"
+symbols = ["BTCUSDT"]
+exchanges = ["binance"]
+
+[strategies.prediction.parameters]
+order_size = "0.01"
+max_position = "1.0"
+prediction_horizon_seconds = 5
+min_confidence = "0.6"
+lookback_seconds = 300
+update_interval_ms = 1000
+spread_bps = 10
+confidence_adjustment = true
+
+# Risk management configurations
+[risk_rules.max_position_size]
+type = "MaxPositionSize"
+symbol = "BTCUSDT"
+max_size = "1.0"
+
+[risk_rules.max_order_size]
+type = "MaxOrderSize"
+symbol = "BTCUSDT"
+max_size = "0.1"
+
+[risk_rules.max_daily_loss]
+type = "MaxDailyLoss"
+max_loss = "100.0"
+
+[risk_rules.max_drawdown]
+type = "MaxDrawdown"
+max_drawdown_percent = "0.1"
+
+# Logging configuration
+[logging]
+level = "info"
+file_path = "logs/crypto_hft.log"
+max_file_size = 10485760  # 10MB
+max_files = 5

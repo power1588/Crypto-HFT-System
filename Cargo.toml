@@ -14,12 +14,28 @@ async-trait = "0.1"
 # Performance dependencies
 smallvec = { version = "1.13", features = ["serde"] }
 simd-json = "0.13"
+dashmap = "5.5"
 
 # Testing dependencies
 mockall = "0.12"
 criterion = { version = "0.5", features = ["html_reports"] }
 proptest = "1.4"
 wiremock = "0.6"
+
+# Logging dependencies
+log = "0.4"
+fern = "0.6"
+chrono = { version = "0.4", features = ["serde"] }
+tracing = "0.1"
+uuid = { version = "1.0", features = ["v4"] }
+
+# Network dependencies
+reqwest = { version = "0.11", features = ["json"] }
+tokio-tungstenite = { version = "0.21", features = ["native-tls"] }
+futures-util = "0.3"
+hmac = "0.12"
+sha2 = "0.10"
+base64 = "0.21"
 
 [dev-dependencies]
 tokio-test = "0.4"
@@ -31,3 +47,15 @@ harness = false
 [[bench]]
 name = "message_parsing_benchmark"
 harness = false
+
+[[bin]]
+name = "binance_dry_run"
+path = "src/binance_dry_run.rs"
+
+[[bin]]
+name = "binance_dry_run_simple"
+path = "src/binance_dry_run_simple.rs"
+
+[[bin]]
+name = "binance_dry_run_market_making"
+path = "src/binance_dry_run_market_making.rs"

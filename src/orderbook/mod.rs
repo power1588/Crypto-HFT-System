@@ -2,4 +2,4 @@ pub mod orderbook;
 pub mod types;
 
 pub use orderbook::OrderBook;
-pub use types::{OrderBookLevel, OrderBookDelta, OrderBookSnapshot};
+pub use types::{OrderBookDelta, OrderBookLevel, OrderBookSnapshot};

@@ -1,7 +1,7 @@
+use crate::core::events::{OrderBookDelta, OrderBookSnapshot};
 use crate::types::{Price, Size};
-use crate::orderbook::types::{OrderBookLevel, OrderBookDelta, OrderBookSnapshot};
-use std::collections::BTreeMap;
 use smallvec::SmallVec;
+use std::collections::BTreeMap;
 
 /// OrderBook implementation using BTreeMap for efficient price level management
 /// Bids are stored in descending order (highest price first)
@@ -32,7 +32,10 @@ impl OrderBook {
 
     /// Get the best bid (highest price) if available
     pub fn best_bid(&self) -> Option<(Price, Size)> {
-        self.bids.iter().next_back().map(|(price, size)| (*price, *size))
+        self.bids
+            .iter()
+            .next_back()
+            .map(|(price, size)| (*price, *size))
     }
 
     /// Get the best ask (lowest price) if available
@@ -53,11 +56,11 @@ impl OrderBook {
     /// Uses SmallVec for stack allocation when N is small (common case in HFT)
     pub fn top_bids(&self, n: usize) -> SmallVec<[(Price, Size); 20]> {
         let mut result = SmallVec::new();
-        
+
         for (price, size) in self.bids.iter().rev().take(n) {
             result.push((*price, *size));
         }
-        
+
         result
     }
 
@@ -65,11 +68,11 @@ impl OrderBook {
     /// Uses SmallVec for stack allocation when N is small (common case in HFT)
     pub fn top_asks(&self, n: usize) -> SmallVec<[(Price, Size); 20]> {
         let mut result = SmallVec::new();
-        
+
         for (price, size) in self.asks.iter().take(n) {
             result.push((*price, *size));
         }
-        
+
         result
     }
 
@@ -135,6 +138,7 @@ impl OrderBook {
 mod tests {
     use super::*;
     use crate::types::{Price, Size};
+    use crate::OrderBookLevel;
 
     fn create_price(value: &str) -> Price {
         Price::from_str(value).unwrap()
@@ -156,9 +160,10 @@ mod tests {
     #[test]
     fn test_apply_snapshot() {
         let mut book = OrderBook::new("BTCUSDT".to_string());
-        
+
         let snapshot = OrderBookSnapshot::new(
             "BTCUSDT".to_string(),
+            "test".to_string(),
             vec![
                 OrderBookLevel::new(create_price("100.00"), create_size("10.0")),
                 OrderBookLevel::new(create_price("99.50"), create_size("5.0")),
@@ -173,8 +178,14 @@ mod tests {
         book.apply_snapshot(snapshot);
 
         // Check best bid and ask
-        assert_eq!(book.best_bid(), Some((create_price("100.00"), create_size("10.0"))));
-        assert_eq!(book.best_ask(), Some((create_price("100.50"), create_size("8.0"))));
+        assert_eq!(
+            book.best_bid(),
+            Some((create_price("100.00"), create_size("10.0")))
+        );
+        assert_eq!(
+            book.best_ask(),
+            Some((create_price("100.50"), create_size("8.0")))
+        );
         assert_eq!(book.spread(), Some(create_price("0.50")));
         assert_eq!(book.last_update(), 123456789);
 
@@ -193,12 +204,19 @@ mod tests {
     #[test]
     fn test_apply_delta() {
         let mut book = OrderBook::new("BTCUSDT".to_string());
-        
+
         // First apply a snapshot
         let snapshot = OrderBookSnapshot::new(
             "BTCUSDT".to_string(),
-            vec![OrderBookLevel::new(create_price("100.00"), create_size("10.0"))],
-            vec![OrderBookLevel::new(create_price("101.00"), create_size("8.0"))],
+            "test".to_string(),
+            vec![OrderBookLevel::new(
+                create_price("100.00"),
+                create_size("10.0"),
+            )],
+            vec![OrderBookLevel::new(
+                create_price("101.00"),
+                create_size("8.0"),
+            )],
             123456789,
         );
         book.apply_snapshot(snapshot);
@@ -206,6 +224,7 @@ mod tests {
         // Apply delta updates
         let delta = OrderBookDelta::new(
             "BTCUSDT".to_string(),
+            "test".to_string(),
             vec![
                 // Update existing bid
                 OrderBookLevel::new(create_price("100.00"), create_size("15.0")),
@@ -225,54 +244,59 @@ mod tests {
         book.apply_delta(delta);
 
         // Check updates
-        assert_eq!(book.best_bid(), Some((create_price("100.50"), create_size("5.0"))));
-        assert_eq!(book.best_ask(), Some((create_price("101.00"), create_size("10.0"))));
+        assert_eq!(
+            book.best_bid(),
+            Some((create_price("100.50"), create_size("5.0")))
+        );
+        assert_eq!(
+            book.best_ask(),
+            Some((create_price("101.00"), create_size("10.0")))
+        );
         assert_eq!(book.last_update(), 123456790);
 
         // Check that the removed levels are gone
         let top_bids = book.top_bids(10);
-        assert!(!top_bids.iter().any(|(price, _)| *price == create_price("99.50")));
+        assert!(!top_bids
+            .iter()
+            .any(|(price, _)| *price == create_price("99.50")));
 
         let top_asks = book.top_asks(10);
-        assert!(!top_asks.iter().any(|(price, _)| *price == create_price("102.00")));
+        assert!(!top_asks
+            .iter()
+            .any(|(price, _)| *price == create_price("102.00")));
     }
 
     #[test]
     fn test_smallvec_optimization() {
         let mut book = OrderBook::new("BTCUSDT".to_string());
-        
+
         // Create a snapshot with many levels
         let mut bids = Vec::new();
         let mut asks = Vec::new();
-        
+
         for i in 0..30 {
             bids.push(OrderBookLevel::new(
                 create_price(&format!("{}.{}", 100 - i, 50 - i)),
-                create_size(&format!("{}", i + 1))
+                create_size(&format!("{}", i + 1)),
             ));
-            
+
             asks.push(OrderBookLevel::new(
                 create_price(&format!("{}.{}", 101 + i, 50 + i)),
-                create_size(&format!("{}", i + 1))
+                create_size(&format!("{}", i + 1)),
             ));
         }
-        
-        let snapshot = OrderBookSnapshot::new(
-            "BTCUSDT".to_string(),
-            bids,
-            asks,
-            123456789,
-        );
-        
+
+        let snapshot = OrderBookSnapshot::new("BTCUSDT".to_string(), "test".to_string(), bids, asks, 123456789);
+
         book.apply_snapshot(snapshot);
-        
+
         // Test that top_bids and top_asks return SmallVec
         let top_bids = book.top_bids(5);
         let top_asks = book.top_asks(5);
-        
+
         assert_eq!(top_bids.len(), 5);
         assert_eq!(top_asks.len(), 5);
-        
+
         // Verify the order is correct
         assert!(top_bids[0].0 > top_bids[1].0); // Bids should be descending
         assert!(top_asks[0].0 < top_asks[1].0); // Asks should be ascending

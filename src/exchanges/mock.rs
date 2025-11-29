@@ -1,234 +1,174 @@
-use crate::traits::{MarketDataStream, MarketEvent, ExecutionClient, OrderManager};
-use crate::types::{Price, Size};
-use std::collections::HashMap;
+use crate::core::events::OrderBookSnapshot;
+use crate::exchanges::connection_manager::ExchangeAdapter;
+use crate::exchanges::error::BoxedError;
+use crate::traits::{
+    Balance, ExecutionReport, MarketDataStream, MarketEvent, NewOrder, OrderId, TradingFees,
+};
+use async_trait::async_trait;
+use std::sync::Arc;
+use tokio::sync::{Mutex, RwLock};
 
 /// Mock exchange adapter for testing
+#[allow(dead_code)]
 pub struct MockExchangeAdapter {
-    /// Market data stream
-    market_data_stream: Option<Box<dyn MarketDataStream>>,
-    /// Execution client
-    execution_client: Option<Box<dyn ExecutionClient>>,
-    /// Order manager
-    order_manager: Option<Box<dyn OrderManager>>,
+    /// Exchange name
+    name: String,
+    /// Connected status
+    connected: Arc<RwLock<bool>>,
 }
 
 impl MockExchangeAdapter {
     /// Create a new mock exchange adapter
-    pub fn new() -> Self {
+    pub fn new(name: &str) -> Self {
         Self {
-            market_data_stream: None,
-            execution_client: None,
-            order_manager: None,
+            name: name.to_string(),
+            connected: Arc::new(RwLock::new(false)),
         }
     }
+}
 
-    /// Set market data stream
-    pub fn with_market_data_stream(
-        mut self,
-        stream: Box<dyn MarketDataStream>,
-    ) -> Self {
-        self.market_data_stream = Some(stream);
-        self
+/// Mock WebSocket stream
+pub struct MockWebSocket {
+    connected: Arc<RwLock<bool>>,
+}
+
+impl MockWebSocket {
+    pub fn new(connected: Arc<RwLock<bool>>) -> Self {
+        Self { connected }
+    }
+}
+
+#[async_trait]
+impl MarketDataStream for MockWebSocket {
+    type Error = BoxedError;
+
+    async fn subscribe(&mut self, _symbols: &[&str]) -> Result<(), Self::Error> {
+        Ok(())
     }
 
-    /// Set execution client
-    pub fn with_execution_client(
-        mut self,
-        client: Box<dyn ExecutionClient>,
-    ) -> Self {
-        self.execution_client = Some(client);
-        self
+    async fn unsubscribe(&mut self, _symbols: &[&str]) -> Result<(), Self::Error> {
+        Ok(())
     }
 
-    /// Set order manager
-    pub fn with_order_manager(
-        mut self,
-        manager: Box<dyn OrderManager>,
-    ) -> Self {
-        self.order_manager = Some(manager);
-        self
+    async fn next(&mut self) -> Option<Result<MarketEvent, Self::Error>> {
+        None
+    }
+
+    fn is_connected(&self) -> bool {
+        self.connected
+            .try_read()
+            .map(|guard| *guard)
+            .unwrap_or(false)
+    }
+
+    fn last_update(&self, _symbol: &str) -> Option<u64> {
+        None
+    }
+}
+
+#[async_trait]
+impl ExchangeAdapter for MockExchangeAdapter {
+    async fn connect(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mut connected = self.connected.write().await;
+        *connected = true;
+        Ok(())
+    }
+
+    async fn disconnect(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        let mut connected = self.connected.write().await;
+        *connected = false;
+        Ok(())
+    }
+
+    async fn get_market_data_stream(
+        &self,
+    ) -> Result<
+        Arc<Mutex<dyn MarketDataStream<Error = BoxedError> + Send + Sync>>,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
+        Ok(Arc::new(Mutex::new(MockWebSocket::new(
+            self.connected.clone(),
+        ))))
+    }
+
+    async fn place_order(
+        &self,
+        _order: NewOrder,
+    ) -> Result<OrderId, Box<dyn std::error::Error + Send + Sync>> {
+        Ok("mock_order_123".to_string())
+    }
+
+    async fn cancel_order(
+        &self,
+        _order_id: OrderId,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(())
+    }
+
+    async fn get_order_status(
+        &self,
+        _order_id: OrderId,
+    ) -> Result<ExecutionReport, Box<dyn std::error::Error + Send + Sync>> {
+        Err("Not implemented".into())
+    }
+
+    async fn get_balances(&self) -> Result<Vec<Balance>, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(vec![])
+    }
+
+    async fn get_open_orders(
+        &self,
+        _symbol: Option<&str>,
+    ) -> Result<Vec<ExecutionReport>, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(vec![])
+    }
+
+    async fn get_order_book(
+        &self,
+        symbol: &str,
+        _limit: u32,
+    ) -> Result<OrderBookSnapshot, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(OrderBookSnapshot::new(symbol, "mock", vec![], vec![], 0))
+    }
+
+    async fn get_trading_fees(
+        &self,
+        symbol: &str,
+    ) -> Result<TradingFees, Box<dyn std::error::Error + Send + Sync>> {
+        Ok(TradingFees {
+            symbol: symbol.to_string(),
+            maker_fee: rust_decimal::Decimal::new(1, 4), // 0.0001
+            taker_fee: rust_decimal::Decimal::new(1, 4), // 0.0001
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::types::{Price, Size};
 
-    struct MockMarketDataStream {
-        events: Vec<MarketEvent>,
-        connected: bool,
-        symbol: String,
+    #[tokio::test]
+    async fn test_mock_exchange_adapter() {
+        let adapter = MockExchangeAdapter::new("test");
+        assert_eq!(adapter.name, "test");
+
+        adapter.connect().await.unwrap();
+        let connected = adapter.connected.read().await;
+        assert!(*connected);
     }
 
-    struct MockExecutionClient {
-        orders: Vec<crate::traits::ExecutionReport>,
-        connected: bool,
-    }
+    #[tokio::test]
+    async fn test_mock_websocket_is_connected() {
+        let connected = Arc::new(RwLock::new(false));
+        let ws = MockWebSocket::new(connected.clone());
 
-    struct MockOrderManager {
-        orders: Vec<crate::traits::ExecutionReport>,
-        connected: bool,
-    }
+        assert!(!ws.is_connected());
 
-    impl MockMarketDataStream {
-        fn new(symbol: String) -> Self {
-            Self {
-                events: Vec::new(),
-                connected: false,
-                symbol,
-            }
+        {
+            let mut guard = connected.write().await;
+            *guard = true;
         }
 
-        async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-            self.connected = true;
-            Ok(())
-        }
-
-        async fn next(&mut self) -> Option<MarketEvent> {
-            if self.events.is_empty() {
-                None
-            } else {
-                let event = self.events.remove(0);
-                self.events.push(event);
-                Some(event)
-            }
-        }
-
-        async fn disconnect(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-            self.connected = false;
-            Ok(())
-        }
-    }
-
-    impl MockExecutionClient {
-        fn new() -> Self {
-            Self {
-                orders: Vec::new(),
-                connected: false,
-            }
-        }
-
-        async fn submit_order(&mut self, order: crate::traits::NewOrder) -> Result<crate::traits::OrderId, Box<dyn std::error::Error>> {
-            let order_id = order.order_id.clone();
-            let report = crate::traits::ExecutionReport {
-                order_id: order_id.clone(),
-                client_order_id: Some(order.client_order_id.clone()),
-                symbol: order.symbol.clone(),
-                status: crate::traits::OrderStatus::New,
-                side: order.side,
-                order_type: order.order_type,
-                time_in_force: order.time_in_force,
-                quantity: order.quantity,
-                price: order.price,
-                timestamp: std::time::SystemTime::now()
-                    .duration_since(std::time::UNIX_EPOCH)
-                    .as_millis() as u64,
-            };
-            
-            self.orders.push(report);
-            Ok(order_id)
-        }
-
-        async fn get_order(&self, order_id: crate::traits::OrderId) -> Result<crate::traits::ExecutionReport, Box<dyn std::error::Error>> {
-            self.orders
-                .iter()
-                .find(|order| order.order_id == order_id)
-                .cloned()
-                .ok_or_else(|| Err(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("Order not found: {}", order_id.as_str())
-                )))
-        }
-
-        async fn get_all_orders(&self) -> Result<Vec<crate::traits::ExecutionReport>, Box<dyn std::error::Error>> {
-            Ok(self.orders.clone())
-        }
-
-        async fn get_orders_by_symbol(&self, symbol: &str) -> Result<Vec<crate::traits::ExecutionReport>, Box<dyn std::error::Error>> {
-            Ok(self
-                .orders
-                .iter()
-                .filter(|order| order.symbol == symbol)
-                .cloned()
-                .collect()
-        }
-    }
-
-    impl MockOrderManager {
-        fn new() -> Self {
-            Self {
-                orders: Vec::new(),
-                connected: false,
-            }
-        }
-
-        async fn handle_execution_report(&mut self, report: crate::traits::ExecutionReport) -> Result<(), Box<dyn std::error::Error>> {
-            // Just store the report for testing
-            self.orders.push(report);
-            Ok(())
-        }
-
-        async fn get_order(&self, order_id: crate::traits::OrderId) -> Result<crate::traits::ExecutionReport, Box<dyn std::error::Error>> {
-            self.orders
-                .iter()
-                .find(|order| order.order_id == order_id)
-                .cloned()
-                .ok_or_else(|| Err(Box::new(std::io::Error::new(
-                    std::io::ErrorKind::NotFound,
-                    format!("Order not found: {}", order_id.as_str())
-                )))
-        }
-
-        async fn get_all_orders(&self) -> Result<Vec<crate::traits::ExecutionReport>, Box<dyn std::error::Error>> {
-            Ok(self.orders.clone())
-        }
-
-        async fn get_orders_by_symbol(&self, symbol: &str) -> Result<Vec<crate::traits::ExecutionReport>, Box<dyn std::error::Error>> {
-            Ok(self
-                .orders
-                .iter()
-                .filter(|order| order.symbol == symbol)
-                .cloned()
-                .collect()
-        }
-
-        async fn connect(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-            self.connected = true;
-            Ok(())
-        }
-
-        async fn disconnect(&mut self) -> Result<(), Box<dyn std::error::Error>> {
-            self.connected = false;
-            Ok(())
-        }
-    }
-
-    #[test]
-    fn test_mock_exchange_adapter() {
-        let mut adapter = MockExchangeAdapter::new();
-        
-        // Test with mock implementations
-        let market_stream = MockMarketDataStream::new("BTCUSDT".to_string());
-        let execution_client = MockExecutionClient::new();
-        let order_manager = MockOrderManager::new();
-        
-        adapter = adapter.with_market_data_stream(Box::new(market_stream));
-        adapter = adapter.with_execution_client(Box::new(execution_client));
-        adapter = adapter.with_order_manager(Box::new(order_manager));
-        
-        // Test connection
-        assert!(adapter.market_data_stream.is_some());
-        assert!(adapter.execution_client.is_some());
-        assert!(adapter.order_manager.is_some());
-        
-        // Test that mock implementations are properly set
-        let market_stream = adapter.market_data_stream.unwrap();
-        let execution_client = adapter.execution_client.unwrap();
-        let order_manager = adapter.order_manager.unwrap();
-        
-        assert!(market_stream.symbol == "BTCUSDT");
-        assert!(execution_client.orders.is_empty());
-        assert!(order_manager.orders.is_empty());
+        assert!(ws.is_connected());
     }
 }

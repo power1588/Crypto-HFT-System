@@ -1,1 +1,40 @@
-/target
+# Rust
+/target/
+/debug/
+/release/
+*.rs.bk
+*.rlib
+*.prof*
+.idea/
+*.log
+.env*
+
+# IDE
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Configuration files with sensitive data
+config/*.toml
+!config/example.toml
+
+# Logs
+logs/
+*.log
+
+# Test artifacts
+/coverage/
+*.profraw
+
+# Documentation
+/book/
+/docs/
+
+# Backup files
+*.bak
+*.backup
+*.tmp

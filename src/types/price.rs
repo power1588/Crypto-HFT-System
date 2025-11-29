@@ -1,5 +1,5 @@
 use rust_decimal::Decimal;
-use serde::{Deserialize, Serialize, Serializer, Deserializer};
+use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::fmt;
 use std::str::FromStr;
 
@@ -89,6 +89,31 @@ impl std::ops::Div<Decimal> for Price {
     }
 }
 
+// Implement Price / Price -> Decimal (T034: for ratio calculations)
+impl std::ops::Div<Price> for Price {
+    type Output = Decimal;
+
+    fn div(self, rhs: Price) -> Decimal {
+        self.0 / rhs.0
+    }
+}
+
+// Implement Neg trait for Price (needed for calculations)
+impl std::ops::Neg for Price {
+    type Output = Self;
+
+    fn neg(self) -> Self {
+        Self(-self.0)
+    }
+}
+
+impl Price {
+    /// Get the absolute value of the price
+    pub fn abs(&self) -> Self {
+        Self(self.0.abs())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,11 +134,11 @@ mod tests {
     #[test]
     fn test_price_arithmetic() {
         let price1 = Price::new(Decimal::new(10050, 2)); // 100.50
-        let price2 = Price::new(Decimal::new(50, 2));    // 0.50
-        
+        let price2 = Price::new(Decimal::new(50, 2)); // 0.50
+
         let sum = price1 + price2;
         assert_eq!(sum.value(), Decimal::new(10100, 2)); // 101.00
-        
+
         let diff = price1 - price2;
         assert_eq!(diff.value(), Decimal::new(10000, 2)); // 100.00
     }
@@ -122,7 +147,7 @@ mod tests {
     fn test_price_multiplication() {
         let price = Price::new(Decimal::new(100, 0)); // 100
         let multiplier = Decimal::new(150, 2); // 1.5
-        
+
         let result = price * multiplier;
         assert_eq!(result.value(), Decimal::new(150, 0)); // 150
     }
@@ -130,11 +155,11 @@ mod tests {
     #[test]
     fn test_price_serialization() {
         let price = Price::new(Decimal::new(10050, 2)); // 100.50
-        
+
         // Test JSON serialization
         let json = serde_json::to_string(&price).unwrap();
         assert_eq!(json, "\"100.50\"");
-        
+
         // Test JSON deserialization
         let deserialized: Price = serde_json::from_str(&json).unwrap();
         assert_eq!(deserialized, price);

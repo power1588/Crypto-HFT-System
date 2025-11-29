@@ -76,7 +76,7 @@ fn bench_message_to_market_event(c: &mut Criterion) {
     }"#;
 
     let message = BinanceMessage::from_json(json).unwrap();
-    
+
     c.bench_function("message_to_market_event", |b| {
         b.iter(|| {
             let event = message.clone().to_market_event();

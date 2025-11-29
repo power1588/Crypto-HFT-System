@@ -1,16 +1,46 @@
-pub mod market_data;
-pub mod execution;
 pub mod events;
+pub mod execution;
+pub mod market_data;
+pub mod strategy;
 
 // Re-export all traits
-pub use market_data::MarketDataStream;
-pub use market_data::MarketDataHistory;
 pub use execution::ExecutionClient;
 pub use execution::OrderManager;
+pub use market_data::MarketDataHistory;
+pub use market_data::MarketDataStream;
 
-// Re-export all types
+// Re-export all types from events (which now re-exports from core::events)
 pub use events::{
-    MarketEvent, NewOrder, OrderId, ExecutionReport, OrderStatus, OrderSide, OrderType, TimeInForce
+    Balance,
+    // Type aliases
+    ExchangeId,
+    ExecutionReport,
+    // Enums
+    MarketEvent,
+    NewOrder,
+    Order,
+    OrderBookDelta,
+    // Structs
+    OrderBookLevel,
+    OrderBookSnapshot,
+    OrderId,
+    OrderSide,
+    OrderStatus,
+
+    OrderType,
+    Position,
+    RiskViolation,
+    Signal,
+    SystemEvent,
+    TimeInForce,
+    Timestamp,
+
+    Trade,
+    TradingEvent,
+    TradingFees,
 };
-pub use execution::{Balance, TradingFees};
-pub use market_data::Trade;
+
+pub use strategy::{
+    PositionManager, RiskManager, SignalValidator, Strategy, StrategyConfig, StrategyMetrics,
+    StrategyState,
+};

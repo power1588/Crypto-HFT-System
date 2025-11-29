@@ -1,12 +1,15 @@
-use async_trait::async_trait;
 use crate::traits::{
-    MarketDataStream, ExecutionClient, MarketEvent, NewOrder, OrderId, ExecutionReport,
-    OrderStatus, OrderSide, OrderType, TimeInForce, Balance, TradingFees
+    Balance, ExecutionClient, ExecutionReport, MarketDataStream, MarketEvent, NewOrder, OrderId,
+    OrderStatus, TradingFees,
 };
 use crate::types::Size;
+use async_trait::async_trait;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::{Mutex, RwLock};
+
+/// Boxed error type for compatibility with EventLoop trait bounds
+pub type BoxedError = Box<dyn std::error::Error + Send + Sync>;
 
 /// Mock implementation of MarketDataStream for testing
 #[derive(Debug)]
@@ -47,7 +50,7 @@ impl MockMarketDataStream {
 
 #[async_trait]
 impl MarketDataStream for MockMarketDataStream {
-    type Error = MockError;
+    type Error = BoxedError;
 
     async fn subscribe(&mut self, symbols: &[&str]) -> Result<(), Self::Error> {
         let mut subs = self.subscriptions.write().await;
@@ -68,7 +71,7 @@ impl MarketDataStream for MockMarketDataStream {
     async fn next(&mut self) -> Option<Result<MarketEvent, Self::Error>> {
         let events = self.events.read().await;
         let mut index = self.index.lock().await;
-        
+
         if *index < events.len() {
             let event = events[*index].clone();
             *index += 1;
@@ -103,15 +106,33 @@ pub struct MockExecutionClient {
 impl MockExecutionClient {
     pub fn new() -> Self {
         let mut balances = HashMap::new();
-        balances.insert("BTC".to_string(), Balance::new("BTC".to_string(), 
-            Size::from_str("10.0").unwrap(), Size::from_str("0.0").unwrap()));
-        balances.insert("USDT".to_string(), Balance::new("USDT".to_string(), 
-            Size::from_str("100000.0").unwrap(), Size::from_str("0.0").unwrap()));
-        
+        balances.insert(
+            "BTC".to_string(),
+            Balance::new(
+                "BTC".to_string(),
+                Size::from_str("10.0").unwrap(),
+                Size::from_str("0.0").unwrap(),
+            ),
+        );
+        balances.insert(
+            "USDT".to_string(),
+            Balance::new(
+                "USDT".to_string(),
+                Size::from_str("100000.0").unwrap(),
+                Size::from_str("0.0").unwrap(),
+            ),
+        );
+
         let mut fees = HashMap::new();
-        fees.insert("BTCUSDT".to_string(), TradingFees::new("BTCUSDT".to_string(),
-            Size::from_str("0.001").unwrap(), Size::from_str("0.001").unwrap()));
-        
+        fees.insert(
+            "BTCUSDT".to_string(),
+            TradingFees::new(
+                "BTCUSDT".to_string(),
+                Size::from_str("0.001").unwrap(),
+                Size::from_str("0.001").unwrap(),
+            ),
+        );
+
         Self {
             orders: Arc::new(RwLock::new(HashMap::new())),
             balances: Arc::new(RwLock::new(balances)),
@@ -122,64 +143,70 @@ impl MockExecutionClient {
 
     pub async fn set_balance(&self, asset: &str, free: Size, locked: Size) {
         let mut balances = self.balances.write().await;
-        balances.insert(asset.to_string(), Balance::new(asset.to_string(), free, locked));
+        balances.insert(
+            asset.to_string(),
+            Balance::new(asset.to_string(), free, locked),
+        );
     }
 
     pub async fn set_fee(&self, symbol: &str, maker_fee: Size, taker_fee: Size) {
         let mut fees = self.fees.write().await;
-        fees.insert(symbol.to_string(), TradingFees::new(symbol.to_string(), maker_fee, taker_fee));
+        fees.insert(
+            symbol.to_string(),
+            TradingFees::new(symbol.to_string(), maker_fee, taker_fee),
+        );
     }
 }
 
 #[async_trait]
 impl ExecutionClient for MockExecutionClient {
-    type Error = MockError;
+    type Error = BoxedError;
 
     async fn place_order(&self, order: NewOrder) -> Result<OrderId, Self::Error> {
         let mut counter = self.order_counter.lock().await;
-        let order_id = OrderId::new(format!("order_{}", *counter));
+        let order_id: OrderId = format!("order_{}", *counter);
         *counter += 1;
-        
+
+        let timestamp = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64;
+
         let report = ExecutionReport {
             order_id: order_id.clone(),
             client_order_id: order.client_order_id.clone(),
             symbol: order.symbol.clone(),
+            exchange_id: order.exchange_id.clone(),
             status: OrderStatus::New,
-            side: order.side,
-            order_type: order.order_type,
-            time_in_force: order.time_in_force,
-            quantity: order.quantity,
-            price: order.price,
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap()
-                .as_millis() as u64,
+            filled_size: Size::zero(),
+            remaining_size: order.size,
+            average_price: order.price,
+            timestamp,
         };
-        
+
         let mut orders = self.orders.write().await;
         orders.insert(order_id.clone(), report);
-        
+
         Ok(order_id)
     }
 
     async fn cancel_order(&self, order_id: OrderId) -> Result<(), Self::Error> {
         let mut orders = self.orders.write().await;
         if let Some(mut report) = orders.remove(&order_id) {
-            report.status = OrderStatus::Canceled { 
-                remaining_size: report.quantity 
-            };
+            report.status = OrderStatus::Cancelled;
             orders.insert(order_id, report);
             Ok(())
         } else {
-            Err(MockError::OrderNotFound(order_id))
+            Err(Box::new(MockError::OrderNotFound(order_id)))
         }
     }
 
     async fn get_order_status(&self, order_id: OrderId) -> Result<ExecutionReport, Self::Error> {
         let orders = self.orders.read().await;
-        orders.get(&order_id)
+        orders
+            .get(&order_id)
             .cloned()
-            .ok_or(MockError::OrderNotFound(order_id))
+            .ok_or_else(|| Box::new(MockError::OrderNotFound(order_id)) as BoxedError)
     }
 
     async fn get_balances(&self) -> Result<Vec<Balance>, Self::Error> {
@@ -187,14 +214,20 @@ impl ExecutionClient for MockExecutionClient {
         Ok(balances.values().cloned().collect())
     }
 
-    async fn get_open_orders(&self, symbol: Option<&str>) -> Result<Vec<ExecutionReport>, Self::Error> {
+    async fn get_open_orders(
+        &self,
+        symbol: Option<&str>,
+    ) -> Result<Vec<ExecutionReport>, Self::Error> {
         let orders = self.orders.read().await;
         let mut open_orders = Vec::new();
-        
+
         for report in orders.values() {
-            if matches!(report.status, OrderStatus::New | OrderStatus::PartiallyFilled { .. }) {
+            if matches!(
+                report.status,
+                OrderStatus::New | OrderStatus::PartiallyFilled
+            ) {
                 if let Some(s) = symbol {
-                    if report.symbol == s {
+                    if report.symbol.as_str() == s {
                         open_orders.push(report.clone());
                     }
                 } else {
@@ -202,7 +235,7 @@ impl ExecutionClient for MockExecutionClient {
                 }
             }
         }
-        
+
         Ok(open_orders)
     }
 
@@ -213,24 +246,24 @@ impl ExecutionClient for MockExecutionClient {
     ) -> Result<Vec<ExecutionReport>, Self::Error> {
         let orders = self.orders.read().await;
         let mut history = Vec::new();
-        
+
         for report in orders.values() {
             if let Some(s) = symbol {
-                if report.symbol == s {
+                if report.symbol.as_str() == s {
                     history.push(report.clone());
                 }
             } else {
                 history.push(report.clone());
             }
         }
-        
+
         // Sort by timestamp descending
         history.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
-        
+
         if let Some(limit) = limit {
             history.truncate(limit);
         }
-        
+
         Ok(history)
     }
 
@@ -238,7 +271,7 @@ impl ExecutionClient for MockExecutionClient {
         let fees = self.fees.read().await;
         fees.get(symbol)
             .cloned()
-            .ok_or(MockError::SymbolNotFound(symbol.to_string()))
+            .ok_or_else(|| Box::new(MockError::SymbolNotFound(symbol.to_string())) as BoxedError)
     }
 }
 
@@ -254,7 +287,7 @@ pub enum MockError {
 impl std::fmt::Display for MockError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            MockError::OrderNotFound(id) => write!(f, "Order not found: {}", id.as_str()),
+            MockError::OrderNotFound(id) => write!(f, "Order not found: {}", id),
             MockError::SymbolNotFound(symbol) => write!(f, "Symbol not found: {}", symbol),
             MockError::ConnectionError => write!(f, "Connection error"),
             MockError::ParseError(msg) => write!(f, "Parse error: {}", msg),
